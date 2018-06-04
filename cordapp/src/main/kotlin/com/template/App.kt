@@ -101,7 +101,8 @@ class Initiator(private val invoice: InvoiceMessage) : FlowLogic<SignedTransacti
 
         val command = Command(
                 value=InvoiceContract.Commands.IssueAction(),
-                signers=outputState.participants.map { it.owningKey })
+                signers= listOf(supplier.owningKey))
+
 
         val transactionBuilder = TransactionBuilder(notary)
                 .addOutputState(outputState, INVOICE_CONTRACT_ID)
