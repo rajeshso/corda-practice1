@@ -119,9 +119,10 @@ class Initiator(private val invoice: InvoiceMessage) : FlowLogic<SignedTransacti
 
         // Stage 4 - Finalize transaction
         progressTracker.currentStep = FINALISING_TRANSACTION
-        return subFlow(FinalityFlow(
+        val ftx = subFlow(FinalityFlow(
                 transaction = selfSignedTransaction,
                 progressTracker = FINALISING_TRANSACTION.childProgressTracker()))
+        return ftx
     }
 
 }
