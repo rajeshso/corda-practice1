@@ -19,6 +19,7 @@ import net.corda.core.contracts.Command
 import net.corda.core.transactions.TransactionBuilder
 import com.template.INVOICE_CONTRACT_ID
 import net.corda.core.messaging.startTrackedFlow
+import net.corda.core.node.StatesToRecord
 import net.corda.core.utilities.getOrThrow
 import javax.ws.rs.*
 
@@ -39,26 +40,6 @@ class TemplateApi(val rpcOps: CordaRPCOps) {
         return Response.ok("Template GET endpoint.").build()
     }
 
-    @POST
-    @Path("issue")
-    @Consumes(MediaType.APPLICATION_JSON)
-    @Produces(MediaType.APPLICATION_JSON)
-    fun issueInvoice(message:  InvoiceMessage): Response {
-        try {
-            val flowHandle = rpcOps.startTrackedFlow(::Initiator, message)
-            flowHandle.progress.subscribe { println(">> $it") }
-            val result = flowHandle.returnValue.getOrThrow()
-            return Response
-                    .status(Response.Status.CREATED)
-                    .entity("Invoice created")
-                    .build()
-        } catch (ex: Throwable) {
-            return Response
-                    .status(Response.Status.BAD_REQUEST)
-                    .entity(ex.message)
-                    .build()
-        }
-    }
 }
 
 // *********
@@ -66,7 +47,7 @@ class TemplateApi(val rpcOps: CordaRPCOps) {
 // *********
 @InitiatingFlow
 @StartableByRPC
-class Initiator(private val invoice: InvoiceMessage) : FlowLogic<SignedTransaction>() {
+class UploadInvoiceOnChain(private val invoice: InvoiceMessage) : FlowLogic<SignedTransaction>() {
     companion object {
         object GENERATING_TRANSACTION : ProgressTracker.Step("Generating transaction based on new invoice.")
         object VERIFYING_TRANSACTION : ProgressTracker.Step("Verifying contracts constraints.")
@@ -101,7 +82,7 @@ class Initiator(private val invoice: InvoiceMessage) : FlowLogic<SignedTransacti
 
         val command = Command(
                 value=InvoiceContract.Commands.IssueAction(),
-                signers= listOf(supplier.owningKey))
+                signers= listOf(ourIdentity.owningKey))
 
 
         val transactionBuilder = TransactionBuilder(notary)
@@ -119,24 +100,42 @@ class Initiator(private val invoice: InvoiceMessage) : FlowLogic<SignedTransacti
 
         // Stage 4 - Finalize transaction
         progressTracker.currentStep = FINALISING_TRANSACTION
-        val ftx = subFlow(FinalityFlow(
-                transaction = selfSignedTransaction,
-                progressTracker = FINALISING_TRANSACTION.childProgressTracker()))
+        val ftx = subFlow(FinalityFlow(selfSignedTransaction))
+
+        subFlow(BroadcastInvoice(ftx))
         return ftx
     }
 
 }
 
-@CordaSerializable
-data class InvoiceMessage (val description: String)
+@InitiatingFlow
+class BroadcastInvoice(val stx: SignedTransaction) : FlowLogic<Unit>() {
 
-@InitiatedBy(Initiator::class)
-class Responder(val counterpartySession: FlowSession) : FlowLogic<Unit>() {
     @Suspendable
-    override fun call() {
-        return Unit
+    override fun call() : Unit {
+        val funder = serviceHub
+                .networkMapCache
+                .getPeerByLegalName(CordaX500Name("TradeIX", "London", "GB")) ?: throw FlowException("No Funder by this name")
+        val session = initiateFlow(funder)
+        subFlow(SendTransactionFlow(session, stx ))
     }
 }
+
+@InitiatedBy(BroadcastInvoice::class)
+class RecordInvoices(val counterpartySession: FlowSession) : FlowLogic<Unit>() {
+    @Suspendable
+    override fun call() {
+        val flow = ReceiveTransactionFlow(
+                otherSideSession = counterpartySession,
+                checkSufficientSignatures = true,
+                statesToRecord = StatesToRecord.ALL_VISIBLE
+        )
+        subFlow(flow)
+    }
+}
+
+@CordaSerializable
+data class InvoiceMessage (val id: Integer, val description: String, val potentialFunder: String)
 
 // ***********
 // * Plugins *
