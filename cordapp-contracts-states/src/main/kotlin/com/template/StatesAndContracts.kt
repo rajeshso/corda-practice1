@@ -36,6 +36,14 @@ class InvoiceContract : Contract {
             override fun verify(tx: LedgerTransaction, signers: List<PublicKey>) {
                "No input should be present" using (tx.inputStates.isEmpty())
                "Atleast one input should be present" using (tx.outputStates.isNotEmpty())
+                //TODO write some more validation logic
+            }
+        }
+
+        class BidAction : Commands {
+            override fun verify(tx: LedgerTransaction, signers: List<PublicKey>) {
+                //TODO write some more validation logic
+                //TODO: Check if the invoice exists, if the invoice is still in the bidding state, if the invoice was originally sent to the funder
             }
         }
     }
@@ -48,15 +56,16 @@ data class InvoiceState(override val linearId: UniqueIdentifier,
                         val supplier: AbstractParty,
                         val funder: AbstractParty?,
                         val invoiceDesc: String) : LinearState, QueryableState {
+    //TODO: Add a field for OPEN_FOR_BIDS as a boolean
     override fun generateMappedObject(schema: MappedSchema): PersistentState {
         return when(schema) {
             is InvoiceSchemaV1 -> InvoiceSchemaV1.PersistentInvoiceSchemaV1(
                     linearId = this.linearId.id,
-                    funder = this.funder,
+                    funder = this.funder, //TODO: The funder should be a list of Parties
                     supplier = this.supplier,
                     description = this.invoiceDesc
             )
-            else -> throw IllegalArgumentException("Only Invoice is supported at this moment")
+            else -> throw IllegalArgumentException("Only Invoice and Bids are supported at this moment-")
         }
      }
 
@@ -65,6 +74,32 @@ data class InvoiceState(override val linearId: UniqueIdentifier,
     override val participants: List<AbstractParty> get() = listOfNotNull(supplier, funder)
 }
 
+data class BidState(override val linearId: UniqueIdentifier,
+                        val id: Int,
+                        val invoiceID: String, // TODO: This should be a list of InvoiceIDs. Also, the invoiceID can also be UUID
+                        val supplier: AbstractParty,
+                        val funder: AbstractParty,
+                        val price: Double,
+                        val status: String) : LinearState, QueryableState {
+    override fun generateMappedObject(schema: MappedSchema): PersistentState {
+        return when(schema) {
+            is BidSchemaV1 -> BidSchemaV1.PersistentBidSchemaV1(
+                    linearId = this.linearId.id,
+                    id = this.id,
+                    invoiceID = this.invoiceID,
+                    price = this.price,
+                    supplier = supplier,
+                    funder = funder,
+                    status = status
+            )
+            else -> throw IllegalArgumentException("Only Invoice and Bids are supported at this moment.")
+        }
+    }
+
+    override fun supportedSchemas(): Iterable<MappedSchema> =  listOf<MappedSchema>(BidSchemaV1)
+
+    override val participants: List<AbstractParty> get() = listOf<AbstractParty>(supplier, funder)
+}
 
 object InvoiceSchemaV1 : MappedSchema(
         schemaFamily = InvoiceSchema.javaClass,
@@ -82,6 +117,23 @@ object InvoiceSchemaV1 : MappedSchema(
 
 }
 
-object InvoiceSchema {
+object BidSchemaV1 : MappedSchema(
+        schemaFamily = InvoiceSchema.javaClass,
+        version = 1,
+        mappedTypes = listOf(PersistentBidSchemaV1::class.java)
+) {
+    @Entity
+    @Table(name = "bids")
+    class PersistentBidSchemaV1(
+            var linearId: UUID,
+            val id : Int,
+            val invoiceID : String,
+            val price : Double,
+            val supplier : AbstractParty?,
+            val funder : AbstractParty?,
+            val status: String
+    ) : PersistentState()
 
 }
+
+object InvoiceSchema
