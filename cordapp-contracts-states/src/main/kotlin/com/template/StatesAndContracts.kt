@@ -32,7 +32,7 @@ class InvoiceContract : Contract {
     interface Commands : CommandData {
         fun verify(tx: LedgerTransaction, signers: List<PublicKey>)
 
-        class IssueAction : Commands {
+        class Issue : Commands {
             override fun verify(tx: LedgerTransaction, signers: List<PublicKey>) {
                "No input should be present" using (tx.inputStates.isEmpty())
                "Atleast one input should be present" using (tx.outputStates.isNotEmpty())
@@ -44,6 +44,14 @@ class InvoiceContract : Contract {
             override fun verify(tx: LedgerTransaction, signers: List<PublicKey>) {
                 //TODO write some more validation logic
                 //TODO: Check if the invoice exists, if the invoice is still in the bidding state, if the invoice was originally sent to the funder
+            }
+        }
+
+        class AcceptBidAction : Commands {
+            override fun verify(tx: LedgerTransaction, signers: List<PublicKey>) {
+                //TODO write some more validation logic
+                //TODO: Check if the invoice is still in the bidding state, if the invoice was originally sent to the funder
+                // Also check if the bid continues to be in the pending
             }
         }
     }
@@ -98,7 +106,8 @@ data class BidState(override val linearId: UniqueIdentifier,
 
     override fun supportedSchemas(): Iterable<MappedSchema> =  listOf<MappedSchema>(BidSchemaV1)
 
-    override val participants: List<AbstractParty> get() = listOf<AbstractParty>(supplier, funder)
+    override val participants: List<AbstractParty> get() = listOfNotNull<AbstractParty>(supplier, funder)
+
 }
 
 object InvoiceSchemaV1 : MappedSchema(
